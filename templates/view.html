@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>View Attendance - Face Recognition System</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: white;
+            padding: 2rem;
+        }
+        .container {
+            width: 100%;
+            max-width: 95%; /* Use more width for the report */
+            margin: 4rem auto 0; 
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 2rem;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+        }
+        .title { text-align: center; font-size: 2.5rem; margin-bottom: 2rem; color: #FFD700; text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5); }
+        .back-btn { position: absolute; top: 2rem; left: 2rem; background: rgba(255, 255, 255, 0.2); color: white; text-decoration: none; padding: 0.8rem 1.5rem; border-radius: 10px; transition: all 0.3s ease; z-index: 10; }
+        .back-btn:hover { background: rgba(255, 255, 255, 0.3); }
+        .table-container { overflow-x: auto; margin-top: 1rem; }
+        table { 
+            width: 100%; 
+            border-collapse: collapse; 
+            background: rgba(0, 0, 0, 0.4); /* Darker background */
+            border-radius: 10px; 
+            overflow: hidden; 
+            font-size: 0.9rem; 
+        }
+        th, td { 
+            padding: 0.8rem 1rem; 
+            text-align: center; 
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1); /* Lighter border for contrast */
+        }
+        th { 
+            background: rgba(0, 0, 0, 0.6); /* Even darker header */
+            font-weight: bold; 
+            color: #fff; 
+        }
+        tr:hover { 
+            background: rgba(255, 255, 255, 0.1); /* Light hover effect */
+        }
+        .status-p { color: #81C784; font-weight: bold; } /* Light Green */
+        .status-a { color: #E57373; } /* Light Red */
+        .no-records { text-align: center; padding: 3rem; color: #ccc; font-size: 1.2rem; }
+        .subject-form { background: rgba(0,0,0,0.2); padding: 1.5rem; border-radius: 15px; margin-bottom: 2rem; }
+        .subject-form form { display: flex; gap: 1rem; align-items: center; justify-content: center; }
+        input[type="text"] { padding: 0.8rem; border: none; border-radius: 10px; font-size: 1rem; background: rgba(255, 255, 255, 0.9); color: #333; flex-grow: 1; max-width: 400px; }
+        .btn { padding: 0.8rem 1.5rem; border: none; border-radius: 10px; font-size: 1rem; font-weight: bold; cursor: pointer; transition: all 0.3s ease; color: white; background: linear-gradient(135deg, #4CAF50, #45a049); }
+        .btn:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3); }
+    </style>
+</head>
+<body>
+    <a href="/" class="back-btn">← Back</a>
+    
+    <div class="container">
+        <h1 class="title">Consolidated Attendance Report</h1>
+
+        {% if subject_form %}
+        <div class="subject-form">
+            <h2 style="margin-bottom: 1rem; font-size: 1.5rem;">Select Subject</h2>
+            <form method="get" action="/view">
+                <input type="text" name="subject" placeholder="Enter subject name..." value="{{ subject or '' }}" required>
+                <button type="submit" class="btn">View Report</button>
+            </form>
+            {% if message %}
+                <p style="margin-top: 1rem; color: #ffd54f;">{{ message }}</p>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        {% if records %}
+        <h3 style="text-align: center; margin-bottom: 1rem; font-size: 1.8rem;">Report for: {{ subject }}</h3>
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        {% for header in headers %}
+                            <th>{{ header.replace('_', ' ') }}</th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in records %}
+                    <tr>
+                        {% for cell in row %}
+                            {# --- FIX APPLIED HERE --- #}
+                            {# This logic now checks if the current column is an attendance session column #}
+                            {# It skips the first two columns (Enrollment, Name) and the last two (Total, %) #}
+                            {% set is_session_col = loop.index > 2 and loop.index < (headers|length - 1) %}
+                            <td class="
+                                {% if cell == 1 and is_session_col %}status-p
+                                {% elif cell == 0 and is_session_col %}status-a
+                                {% endif %}
+                            ">
+                                {% if cell == 1 and is_session_col %} P
+                                {% elif cell == 0 and is_session_col %} A
+                                {% else %} {{ cell }}
+                                {% endif %}
+                            </td>
+                        {% endfor %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+    </div>
+</body>
+</html>
+

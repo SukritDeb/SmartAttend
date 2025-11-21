@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Take Attendance - Face Recognition System</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: white;
+            padding: 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .container {
+            width: 100%;
+            max-width: 800px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 2.5rem;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+            text-align: center;
+        }
+        .title {
+            font-size: 2.5rem;
+            margin-bottom: 1.5rem;
+            color: #FFD700;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+        }
+        .video-container {
+            position: relative;
+            width: 100%;
+            max-width: 640px;
+            margin: 1.5rem auto;
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+            background: #000;
+        }
+        /* This pseudo-element maintains the 4:3 aspect ratio */
+        .video-container::before {
+            content: "";
+            display: block;
+            padding-top: 75%; 
+        }
+        #video, #overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+        #video {
+            object-fit: cover;
+            z-index: 1;
+        }
+        #overlay {
+            z-index: 2; /* Ensure canvas is on top */
+        }
+        .placeholder {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 3;
+        }
+        .controls, .subject-form {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+        input[type="text"] {
+            padding: 0.8rem;
+            border: none;
+            border-radius: 10px;
+            font-size: 1rem;
+            background: rgba(255, 255, 255, 0.9);
+            color: #333;
+            flex-grow: 1;
+        }
+        .btn {
+            padding: 0.8rem 1.5rem;
+            border: none;
+            border-radius: 10px;
+            font-size: 1rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            color: white;
+        }
+        .btn-primary { background: linear-gradient(135deg, #4CAF50, #45a049); }
+        .btn-secondary { background: linear-gradient(135deg, #2196F3, #1976D2); }
+        .btn-danger { background: linear-gradient(135deg, #f44336, #d32f2f); }
+        .btn:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3); }
+        .btn:disabled { background: #555; cursor: not-allowed; transform: none; box-shadow: none; }
+        .message { padding: 1rem; margin-top: 1.5rem; border-radius: 10px; font-weight: bold; }
+        .success { background: rgba(76, 175, 80, 0.3); border: 2px solid #4CAF50; }
+        .error { background: rgba(244, 67, 54, 0.3); border: 2px solid #f44336; }
+        .back-btn { position: absolute; top: 2rem; left: 2rem; }
+    </style>
+</head>
+<body>
+    <a href="/" class="btn btn-secondary back-btn">← Back</a>
+    
+    <div class="container">
+        <h1 class="title">Live Attendance</h1>
+        
+        <div id="subject-entry">
+            <p style="margin-bottom: 1rem;">Enter the subject name to start the attendance session.</p>
+            <div class="subject-form">
+                <input type="text" id="subject" placeholder="e.g., Physics, Math, etc." required>
+                <button class="btn btn-primary" id="start-btn">Start Session</button>
+            </div>
+        </div>
+
+        <div id="session-controls" style="display: none;">
+             <p style="margin-bottom: 1rem;">Session for <strong id="subject-display"></strong> is active.</p>
+             <div class="controls">
+                <button class="btn btn-danger" id="stop-btn">Stop & Save Attendance</button>
+            </div>
+        </div>
+        
+        <div class="video-container">
+             <div class="placeholder" id="placeholder">Camera Off</div>
+             <video id="video" autoplay muted playsinline style="display: none;"></video>
+             <canvas id="overlay"></canvas>
+        </div>
+        
+        <div id="message"></div>
+    </div>
+    
+    <script>
+        const video = document.getElementById('video');
+        const overlay = document.getElementById('overlay');
+        const placeholder = document.getElementById('placeholder');
+        const messageDiv = document.getElementById('message');
+        const startBtn = document.getElementById('start-btn');
+        const stopBtn = document.getElementById('stop-btn');
+        const subjectInput = document.getElementById('subject');
+        const subjectEntryDiv = document.getElementById('subject-entry');
+        const sessionControlsDiv = document.getElementById('session-controls');
+        const subjectDisplay = document.getElementById('subject-display');
+
+        let stream;
+        let recognitionInterval;
+        let presentStudentIds = new Set();
+        let currentSubject = '';
+
+        async function startSession() {
+            currentSubject = subjectInput.value.trim();
+            if (!currentSubject) {
+                showMessage('Please enter a subject name.', 'error');
+                return;
+            }
+
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
+                video.srcObject = stream;
+                
+                // CRITICAL FIX: Wait for video metadata to load before starting recognition
+                video.onloadedmetadata = () => {
+                    video.play();
+                    video.style.display = 'block';
+                    placeholder.style.display = 'none';
+                    
+                    startBtn.disabled = true;
+                    subjectInput.disabled = true;
+                    subjectEntryDiv.style.display = 'none';
+                    sessionControlsDiv.style.display = 'block';
+                    subjectDisplay.textContent = currentSubject;
+                    
+                    showMessage(`Session for ${currentSubject} started.`, 'success');
+
+                    // Start recognition loop ONLY after video is ready
+                    recognitionInterval = setInterval(recognizeFrame, 1000); // every 1 second
+                };
+
+            } catch (err) {
+                showMessage('Error accessing camera: ' + err.message, 'error');
+            }
+        }
+
+        async function recognizeFrame() {
+            if (!stream || video.paused || video.ended) return;
+            
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const imageData = canvas.toDataURL('image/jpeg');
+
+            try {
+                const response = await fetch('/recognize_frame', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ image_data: imageData })
+                });
+                const result = await response.json();
+                drawRecognitions(result.faces);
+
+            } catch (err) {
+                console.error('Recognition error:', err);
+            }
+        }
+        
+        function drawRecognitions(faces) {
+            const ctx = overlay.getContext('2d');
+            overlay.width = video.clientWidth;
+            overlay.height = video.clientHeight;
+            ctx.clearRect(0, 0, overlay.width, overlay.height);
+            
+            const scaleX = overlay.width / video.videoWidth;
+            const scaleY = overlay.height / video.videoHeight;
+
+            faces.forEach(face => {
+                const { id, name, box } = face;
+                const [x, y, w, h] = box;
+                
+                const sx = x * scaleX;
+                const sy = y * scaleY;
+                const sw = w * scaleX;
+                const sh = h * scaleY;
+
+                ctx.strokeStyle = (name === "Unknown") ? '#f44336' : '#4CAF50';
+                ctx.lineWidth = 3;
+                ctx.strokeRect(sx, sy, sw, sh);
+
+                ctx.fillStyle = ctx.strokeStyle;
+                ctx.font = 'bold 16px Segoe UI';
+                const text = `${name} (${id !== -1 ? id : '?'})`;
+                const textWidth = ctx.measureText(text).width;
+                ctx.fillRect(sx, sy - 22, textWidth + 10, 22);
+                
+                ctx.fillStyle = '#fff';
+                ctx.fillText(text, sx + 5, sy - 5);
+                
+                if (id !== -1) {
+                    if (!presentStudentIds.has(id)) {
+                        presentStudentIds.add(id);
+                        console.log(`Marked present: ${name} (ID: ${id})`);
+                    }
+                }
+            });
+        }
+
+        async function stopSession() {
+            clearInterval(recognitionInterval);
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+            }
+            video.srcObject = null;
+            video.style.display = 'none';
+            placeholder.style.display = 'flex';
+            
+            showMessage('Saving attendance... Please wait.', 'success');
+            
+            try {
+                const response = await fetch('/save_attendance_session', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        subject: currentSubject,
+                        present_ids: Array.from(presentStudentIds)
+                    })
+                });
+                const result = await response.json();
+                if (result.success) {
+                    showMessage(result.message, 'success');
+                } else {
+                    showMessage(result.message, 'error');
+                }
+            } catch (err) {
+                showMessage('Error saving attendance: ' + err.message, 'error');
+            } finally {
+                startBtn.disabled = false;
+                subjectInput.disabled = false;
+                subjectInput.value = '';
+                subjectEntryDiv.style.display = 'block';
+                sessionControlsDiv.style.display = 'none';
+                presentStudentIds.clear();
+                currentSubject = '';
+            }
+        }
+        
+        function showMessage(text, type) {
+            messageDiv.innerHTML = `<div class="message ${type}">${text}</div>`;
+        }
+        
+        startBtn.addEventListener('click', startSession);
+        stopBtn.addEventListener('click', stopSession);
+    </script>
+</body>
+</html>
+
